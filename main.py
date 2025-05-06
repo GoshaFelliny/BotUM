@@ -1,25 +1,46 @@
 import logging
+import os
+import re
+from datetime import datetime, timedelta
 
 import nest_asyncio
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler
-from text import *
-from setting import TOKEN
-import re
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import NoResultFound
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    CallbackQueryHandler
+)
 from sqlalchemy import create_engine
-from datetime import datetime
+from sqlalchemy.exc import NoResultFound
+from sqlalchemy.orm import sessionmaker
+
 from models import Teacher
-import os
+from setting import TOKEN
+from text import *
 
-from datetime import timedelta
-
+# ============================ КОНСТАНТЫ ============================
+CITIES = [
+    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+    "Казань", "Нижний Новгород", "Челябинск", "Омск",
+    "Самара", "Ростов-на-Дону"
+]
+# ============================ НАСТРОЙКА ============================
 nest_asyncio.apply()
 
 engine = create_engine("sqlite:///teachers.db")
 Session = sessionmaker(bind=engine)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+
+# ============================ СОСТОЯНИЯ ============================
+
 
 class SurveyState:
     WAITING_FOR_NAME = 1
@@ -38,11 +59,29 @@ class QState:
 
 user_states = {}
 
-cities = [
-    "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-    "Казань", "Нижний Новгород", "Челябинск", "Омск",
-    "Самара", "Ростов-на-Дону"
-]
+
+# ============================ ОБРАБОТЧИКИ КОМАНД ============================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [
+        ['Зарплата', 'Трудоустройство'],
+    ]
+
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+    await update.message.reply_text(START_TEXT, reply_markup=reply_markup)
+
+
+async def lesson1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(LESSON1_TEXT)
+
+
+async def lesson2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(LESSON2_TEXT)
+
+
+async def lesson3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(LESSON3_TEXT)
 
 
 async def start_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -51,112 +90,12 @@ async def start_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(questions[0])
 
 
-# Функция для начала анкетирования
+# ============================ АНКЕТИРОВАНИЕ ============================
+
 async def start_survey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     user_states[user_id] = SurveyState.WAITING_FOR_NAME
     await update.message.reply_text("Запишите ваше ФИО (формат: Фамилия Имя Отчество):")
-
-
-async def handle_video(update: Update, context: ContextTypes) -> None:
-    user_id = update.message.from_user.id
-    video_file = update.message.video.file_id
-
-    # Создаем папку media, если она не существует
-    os.makedirs('media', exist_ok=True)
-
-    try:
-        # Сохраняем видео в папку "медиа"
-        new_file = await context.bot.get_file(video_file)
-        await new_file.download_to_drive(f'media/{user_id}_video.mp4')  # Сохранение видео
-        await update.message.reply_text("Ваше видео успешно сохранено.")
-    except Exception as e:
-        await update.message.reply_text("Произошла ошибка при сохранении видео.")
-        print(f"Ошибка: {e}")
-
-
-async def send_reminders(app):
-    session = Session()
-    try:
-        current_time = datetime.utcnow()
-        # Получаем всех учителей, которые зарегистрировались более 1 минуты назад и не заполнили анкету
-        teachers = session.query(Teacher).filter(
-            Teacher.text_interview.is_(None),
-            Teacher.registration_time <= current_time - timedelta(minutes=24)
-        ).all()
-
-        for teacher in teachers:
-            try:
-                await app.bot.send_message(
-                    chat_id=teacher.id,
-                    text="Напоминаем вам, что вы еще не прошли анкетирование. Пожалуйста, перейдите ко второму шагу."
-                )
-            except Exception as e:
-                logging.error(f"Ошибка при отправке сообщения: {e}")
-    finally:
-        session.close()
-
-
-async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text:
-        await update.message.reply_text("Для верификации пришлите пожалуйста видео")
-    user_id = update.message.from_user.id
-    video_note = update.message.video_note
-    context.user_data['video_note'] = f'media/{user_id}.mp4'
-    if video_note:
-        file = await context.bot.get_file(video_note.file_id)
-        await file.download_to_drive(f'media/{user_id}.mp4')
-        await handle_algorithm_explanation(update, context)
-
-
-# Функция для обработки текстовых сообщений
-async def handle_text(update: Update, context: ContextTypes) -> None:
-    user_id = update.message.from_user.id
-
-    # Проверка на наличие текстового сообщения
-    if update.message.text:
-        text = update.message.text.strip()
-
-        # Проверка на слово "Трудоустройство"
-        if text.lower() == "трудоустройство":
-            await start_survey(update, context)
-            return
-
-        if text.lower() == "зарплата":
-            await update.message.reply_text("Чем меньше, тем лучше)")
-            return
-
-    # Обработка состояний анкетирования
-    if user_id in user_states:
-        current_state = user_states[user_id]
-
-        if current_state == SurveyState.WAITING_FOR_NAME:
-            await handle_name(update, context)
-        elif current_state == SurveyState.WAITING_FOR_CITY:
-            await handle_city(update, context)
-        elif current_state == SurveyState.WAITING_FOR_BIRTH_DATE:
-            await handle_birth_date(update, context)
-
-        # Обработка состояний собеседования
-        elif current_state == QState.WAITING_FOR_ONE:
-            await handle_experience_kids(update, context)
-        elif current_state == QState.WAITING_FOR_TWO:
-            await handle_experience_robo(update, context)
-        elif current_state == QState.WAITING_FOR_THREE:
-            await handle_interview_city(update, context)
-        elif current_state == QState.WAITING_FOR_FOUR:
-            await handle_free_time(update, context)
-        elif current_state == QState.WAITING_FOR_FIVE:
-            await handle_best_skills(update, context)
-        elif current_state == QState.WAITING_FOR_SIX:
-            await handle_video_note(update, context)
-
-    # Обработка видео
-    if update.message.video:
-        pass
-
-    if update.message.video_note:
-        pass
 
 
 # Функция для обработки ФИО
@@ -169,7 +108,7 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context.user_data['full_name'] = name  # Сохраняем ФИО
         user_states[user_id] = SurveyState.WAITING_FOR_CITY
         reply_markup = ReplyKeyboardMarkup(
-            [[city] for city in cities],
+            [[city] for city in CITIES],
             one_time_keyboard=True,
             resize_keyboard=True
         )
@@ -188,7 +127,7 @@ async def handle_city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.message.from_user.id
     city = update.message.text.strip()
 
-    if city in cities:
+    if city in CITIES:
         context.user_data['city'] = city  # Сохраняем город
         user_states[user_id] = SurveyState.WAITING_FOR_BIRTH_DATE
         await update.message.reply_text(
@@ -250,7 +189,8 @@ async def handle_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 
-# Обработка ответов на вопросы собеседования
+# ============================ СОБЕСЕДОВАНИЕ (ВОПРОСЫ) ============================
+
 async def handle_experience_kids(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     experience = update.message.text.strip()
@@ -313,6 +253,90 @@ async def handle_algorithm_explanation(update: Update, context: ContextTypes.DEF
     await update.message.reply_text("Пожалуйста, подтвердите или отклоните ваши данные:", reply_markup=reply_markup)
 
 
+# ============================ ОБРАБОТКА МЕДИА ============================
+
+async def handle_video(update: Update, context: ContextTypes) -> None:
+    user_id = update.message.from_user.id
+    video_file = update.message.video.file_id
+
+    # Создаем папку media, если она не существует
+    os.makedirs('media', exist_ok=True)
+
+    try:
+        # Сохраняем видео в папку "медиа"
+        new_file = await context.bot.get_file(video_file)
+        await new_file.download_to_drive(f'media/{user_id}_video.mp4')  # Сохранение видео
+        await update.message.reply_text("Ваше видео успешно сохранено.")
+    except Exception as e:
+        await update.message.reply_text("Произошла ошибка при сохранении видео.")
+        print(f"Ошибка: {e}")
+
+
+async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text:
+        await update.message.reply_text("Для верификации пришлите пожалуйста видео")
+    user_id = update.message.from_user.id
+    video_note = update.message.video_note
+    context.user_data['video_note'] = f'media/{user_id}.mp4'
+    if video_note:
+        file = await context.bot.get_file(video_note.file_id)
+        await file.download_to_drive(f'media/{user_id}.mp4')
+        await handle_algorithm_explanation(update, context)
+
+
+# ============================ ОБРАБОТКА ТЕКСТА И СОСТОЯНИЙ ============================
+
+async def handle_text(update: Update, context: ContextTypes) -> None:
+    user_id = update.message.from_user.id
+
+    # Проверка на наличие текстового сообщения
+    if update.message.text:
+        text = update.message.text.strip()
+
+        # Проверка на слово "Трудоустройство"
+        if text.lower() == "трудоустройство":
+            await start_survey(update, context)
+            return
+
+        if text.lower() == "зарплата":
+            await update.message.reply_text("Чем меньше, тем лучше)")
+            return
+
+    # Обработка состояний анкетирования
+    if user_id in user_states:
+        current_state = user_states[user_id]
+
+        if current_state == SurveyState.WAITING_FOR_NAME:
+            await handle_name(update, context)
+        elif current_state == SurveyState.WAITING_FOR_CITY:
+            await handle_city(update, context)
+        elif current_state == SurveyState.WAITING_FOR_BIRTH_DATE:
+            await handle_birth_date(update, context)
+
+        # Обработка состояний собеседования
+        elif current_state == QState.WAITING_FOR_ONE:
+            await handle_experience_kids(update, context)
+        elif current_state == QState.WAITING_FOR_TWO:
+            await handle_experience_robo(update, context)
+        elif current_state == QState.WAITING_FOR_THREE:
+            await handle_interview_city(update, context)
+        elif current_state == QState.WAITING_FOR_FOUR:
+            await handle_free_time(update, context)
+        elif current_state == QState.WAITING_FOR_FIVE:
+            await handle_best_skills(update, context)
+        elif current_state == QState.WAITING_FOR_SIX:
+            await handle_video_note(update, context)
+
+    # Обработка видео
+    if update.message.video:
+        pass
+
+    if update.message.video_note:
+        pass
+
+
+# ============================ CALLBACK (КНОПКИ) ============================
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -350,27 +374,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session.close()
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    keyboard = [
-        ['Зарплата', 'Трудоустройство'],
-    ]
+# ============================ НАПОМИНАНИЯ ============================
 
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+async def send_reminders(app):
+    session = Session()
+    try:
+        current_time = datetime.utcnow()
+        # Получаем всех учителей, которые зарегистрировались более 1 минуты назад и не заполнили анкету
+        teachers = session.query(Teacher).filter(
+            Teacher.text_interview.is_(None),
+            Teacher.registration_time <= current_time - timedelta(minutes=24)
+        ).all()
 
-    await update.message.reply_text(START_TEXT, reply_markup=reply_markup)
+        for teacher in teachers:
+            try:
+                await app.bot.send_message(
+                    chat_id=teacher.id,
+                    text="Напоминаем вам, что вы еще не прошли анкетирование. Пожалуйста, перейдите ко второму шагу."
+                )
+            except Exception as e:
+                logging.error(f"Ошибка при отправке сообщения: {e}")
+    finally:
+        session.close()
 
 
-async def lesson1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(LESSON1_TEXT)
-
-
-async def lesson2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(LESSON2_TEXT)
-
-
-async def lesson3(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(LESSON3_TEXT)
-
+# ============================ MAIN ============================
 
 async def main() -> None:
     app = ApplicationBuilder().token(TOKEN).build()
@@ -389,5 +417,6 @@ async def main() -> None:
 
 if __name__ == '__main__':
     import asyncio
+
     # Запускаем основной цикл
     asyncio.run(main())
