@@ -272,15 +272,29 @@ async def handle_video(update: Update, context: ContextTypes) -> None:
         print(f"Ошибка: {e}")
 
 
+
+
 async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text:
-        await update.message.reply_text("Для верификации пришлите пожалуйста видео")
     user_id = update.message.from_user.id
     video_note = update.message.video_note
-    context.user_data['video_note'] = f'media/{user_id}.mp4'
+    session = Session()
+    teacher = session.get(Teacher, user_id)
+
+
+    # Получаем имя папки из модели (например, ФИО)
+    folder_name = teacher.full_name.strip().replace(' ', '_')  # Можно заменить пробелы на _
+    user_folder = os.path.join('media', folder_name)
+
+    # Создаём папку, если её нет
+    os.makedirs(user_folder, exist_ok=True)
+
+    # Путь для сохранения видео
+    video_path = os.path.join(user_folder, f'{user_id}.mp4')
+    context.user_data['video_note'] = video_path
+
     if video_note:
         file = await context.bot.get_file(video_note.file_id)
-        await file.download_to_drive(f'media/{user_id}.mp4')
+        await file.download_to_drive(video_path)
         await handle_algorithm_explanation(update, context)
 
 
