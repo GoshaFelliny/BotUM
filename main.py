@@ -57,6 +57,9 @@ class QState:
     WAITING_FOR_SIX = 9
 
 
+class LessonState:
+    LES_SCRATCH = 10
+
 user_states = {}
 
 
@@ -89,6 +92,11 @@ async def start_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_states[user_id] = QState.WAITING_FOR_ONE
     await update.message.reply_text(questions[0])
 
+
+async def les_scratch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    user_states[user_id] = LessonState.LES_SCRATCH
+    await update.message.reply_text("ТЕКСТ ДЛЯ ДАЛЬНЕЙШЕГО ЭТАПА ОБУЧЕНИЯ, ОПРАВТЕ ПОЖАЛУЙСТА ВИДЕО - КРУЖОК")
 
 # ============================ АНКЕТИРОВАНИЕ ============================
 
@@ -189,6 +197,8 @@ async def handle_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
 
+
+
 # ============================ СОБЕСЕДОВАНИЕ (ВОПРОСЫ) ============================
 
 async def handle_experience_kids(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -255,6 +265,32 @@ async def handle_algorithm_explanation(update: Update, context: ContextTypes.DEF
 
 # ============================ ОБРАБОТКА МЕДИА ============================
 
+async def save_user_video(
+    video_note,
+    bot,
+    folder_name: str,
+    video_name: str
+) -> str:
+    """
+    Сохраняет видео пользователя в папку media/<folder_name>/<video_name>.mp4
+    :param video_note: объект video_note из update.message.video_note
+    :param bot: context.bot
+    :param folder_name: имя папки (например, ФИО или id пользователя)
+    :param video_name: имя файла (без расширения)
+    :return: путь к сохранённому видеофайлу
+    """
+    user_folder = os.path.join('media', folder_name.strip().replace(' ', '_'))
+    os.makedirs(user_folder, exist_ok=True)
+    if not video_name.lower().endswith('.mp4'):
+        video_name += '.mp4'
+    video_path = os.path.join(user_folder, video_name)
+    if video_note:
+        file = await bot.get_file(video_note.file_id)
+        await file.download_to_drive(video_path)
+    return video_path
+
+
+
 async def handle_video(update: Update, context: ContextTypes) -> None:
     user_id = update.message.from_user.id
     video_file = update.message.video.file_id
@@ -274,28 +310,56 @@ async def handle_video(update: Update, context: ContextTypes) -> None:
 
 
 
-async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_video_note_verification(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     video_note = update.message.video_note
     session = Session()
     teacher = session.get(Teacher, user_id)
+    folder_name = teacher.full_name  # или teacher.id, или любой другой параметр
+    video_name = "verification_video"  # или любое другое имя
 
-
-    # Получаем имя папки из модели (например, ФИО)
-    folder_name = teacher.full_name.strip().replace(' ', '_')  # Можно заменить пробелы на _
-    user_folder = os.path.join('media', folder_name)
-
-    # Создаём папку, если её нет
-    os.makedirs(user_folder, exist_ok=True)
-
-    # Путь для сохранения видео
-    video_path = os.path.join(user_folder, f'{user_id}.mp4')
+    video_path = await save_user_video(
+        video_note=video_note,
+        bot=context.bot,
+        folder_name=folder_name,
+        video_name=video_name
+    )
     context.user_data['video_note'] = video_path
 
-    if video_note:
-        file = await context.bot.get_file(video_note.file_id)
-        await file.download_to_drive(video_path)
-        await handle_algorithm_explanation(update, context)
+    # Теперь вы можете делать что угодно дальше:
+    await update.message.reply_text("Ваше видео успешно сохранено!")
+    await handle_algorithm_explanation(update, context)
+
+
+async def handle_video_note_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    video_note = update.message.video_note
+    session = Session()
+    teacher = session.get(Teacher, user_id)
+    folder_name = teacher.full_name  # или teacher.id, или любой другой параметр
+    video_name = "lesson_video"  # или любое другое имя
+
+    video_path = await save_user_video(
+        video_note=video_note,
+        bot=context.bot,
+        folder_name=folder_name,
+        video_name=video_name
+    )
+    context.user_data['video_note'] = video_path
+
+    # Теперь вы можете делать что угодно дальше:
+    await update.message.reply_text("Ваше видео успешно сохранено!")
+    # Новая функция для обработки
+
+
+
+# ============================ ЭТАП ДАЛЬНЕЙШЕГО ОБУЧЕНИЯ ==============================
+
+
+
+
+
+
 
 
 # ============================ ОБРАБОТКА ТЕКСТА И СОСТОЯНИЙ ============================
@@ -339,7 +403,10 @@ async def handle_text(update: Update, context: ContextTypes) -> None:
         elif current_state == QState.WAITING_FOR_FIVE:
             await handle_best_skills(update, context)
         elif current_state == QState.WAITING_FOR_SIX:
-            await handle_video_note(update, context)
+            await handle_video_note_verification(update, context)
+
+        elif current_state == LessonState.LES_SCRATCH:
+            await handle_video_note_lesson(update, context)
 
     # Обработка видео
     if update.message.video:
@@ -420,6 +487,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("lesson1", lesson1))
     app.add_handler(CommandHandler("step2", start_q))
+    app.add_handler(CommandHandler("step3", les_scratch))
     app.add_handler(CommandHandler("lesson2", lesson2))
     app.add_handler(CommandHandler("lesson3", lesson3))
     app.add_handler(MessageHandler(None, handle_text))
