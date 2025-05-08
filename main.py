@@ -57,8 +57,10 @@ class QState:
     WAITING_FOR_SIX = 9
 
 
+
 class LessonState:
     LES_SCRATCH = 10
+    ROBO_KIT = 11
 
 user_states = {}
 
@@ -96,7 +98,8 @@ async def start_q(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def les_scratch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_states[user_id] = LessonState.LES_SCRATCH
-    await update.message.reply_text("ТЕКСТ ДЛЯ ДАЛЬНЕЙШЕГО ЭТАПА ОБУЧЕНИЯ, ОПРАВТЕ ПОЖАЛУЙСТА ВИДЕО - КРУЖОК")
+    await update.message.reply_text(SCRATCH_LESSON_TEXT)
+
 
 # ============================ АНКЕТИРОВАНИЕ ============================
 
@@ -349,15 +352,20 @@ async def handle_video_note_lesson(update: Update, context: ContextTypes.DEFAULT
 
     # Теперь вы можете делать что угодно дальше:
     await update.message.reply_text("Ваше видео успешно сохранено!")
-    # Новая функция для обработки
+    await update.message.reply_text(ROBO_KIT_TEXT)
+    user_states[user_id] = LessonState.ROBO_KIT
 
 
 
 # ============================ ЭТАП ДАЛЬНЕЙШЕГО ОБУЧЕНИЯ ==============================
 
 
+async def handle_adress(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    address = update.message.text.strip()
+    context.user_data[address] = address
 
-
+    await update.message.reply_text("В скором времени мы закажем и доставим набор")
 
 
 
@@ -402,11 +410,20 @@ async def handle_text(update: Update, context: ContextTypes) -> None:
             await handle_free_time(update, context)
         elif current_state == QState.WAITING_FOR_FIVE:
             await handle_best_skills(update, context)
+        # Здесь бот ждет видео-кружок (QState.WAITING_FOR_SIX)
         elif current_state == QState.WAITING_FOR_SIX:
-            await handle_video_note_verification(update, context)
-
+            if update.message.video_note:
+                await handle_video_note_verification(update, context)
+            else:
+                await update.message.reply_text("Пожалуйста, отправьте видео-кружок (кнопка 📹 в Telegram)!")
+        # Здесь бот ждет видео-кружок для этапа Scratch
         elif current_state == LessonState.LES_SCRATCH:
-            await handle_video_note_lesson(update, context)
+            if update.message.video_note:
+                await handle_video_note_lesson(update, context)
+            else:
+                await update.message.reply_text("Пожалуйста, отправьте видео-кружок (кнопка 📹 в Telegram) для проверки!")
+        elif current_state == LessonState.ROBO_KIT:
+            await handle_adress(update, context)
 
     # Обработка видео
     if update.message.video:
