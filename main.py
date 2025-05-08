@@ -439,7 +439,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # Обновляем запись в базе данных
             existing_teacher = session.query(Teacher).filter_by(id=user_id).one()
             existing_teacher.text_interview = text_interview  # Сохраняем текст интервью
-            existing_teacher.video_path = context.user_data['video_note']
+            existing_teacher.video_path = os.path.dirname(context.user_data['video_note'])
             session.commit()  # Сохраняем изменения в базе данных
 
             await query.message.reply_text("Ваши данные подтверждены. Спасибо!")
