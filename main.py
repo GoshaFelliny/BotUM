@@ -61,6 +61,7 @@ class QState:
 class LessonState:
     LES_SCRATCH = 10
     ROBO_KIT = 11
+    VIDEO_LESSON = 12
 
 user_states = {}
 
@@ -258,8 +259,8 @@ async def handle_algorithm_explanation(update: Update, context: ContextTypes.DEF
     await update.message.reply_text("Вот ваши ответы:\n" + answers)
 
     keyboard = [
-        [InlineKeyboardButton("Подтвердить", callback_data='confirm'),
-         InlineKeyboardButton("Отклонить", callback_data='reject')]
+        [InlineKeyboardButton("✅ Подтвердить", callback_data="interview_confirm")],
+        [InlineKeyboardButton("❌ Отклонить", callback_data="interview_reject")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -363,10 +364,19 @@ async def handle_video_note_lesson(update: Update, context: ContextTypes.DEFAULT
 async def handle_adress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     address = update.message.text.strip()
-    context.user_data[address] = address
+    context.user_data['address'] = address  # Сохраняем адрес под ключом 'address'
 
-    await update.message.reply_text("В скором времени мы закажем и доставим набор")
+    keyboard = [
+        [InlineKeyboardButton("✅ Подтвердить", callback_data="address_confirm")],
+        [InlineKeyboardButton("✏️ Изменить", callback_data="address_edit")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
+    await update.message.reply_text(
+        f"Вы указали адрес:\n\n<b>{address}</b>\n\nВсе верно?",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
 
 
 
@@ -435,7 +445,8 @@ async def handle_text(update: Update, context: ContextTypes) -> None:
 
 # ============================ CALLBACK (КНОПКИ) ============================
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# Обработчик для интервью
+async def interview_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
@@ -452,7 +463,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"Лучшие навыки: {context.user_data.get('best_skills')}\n"
         )
 
-        if query.data == 'confirm':
+        if query.data == 'interview_confirm':
             # Обновляем запись в базе данных
             existing_teacher = session.query(Teacher).filter_by(id=user_id).one()
             existing_teacher.text_interview = text_interview  # Сохраняем текст интервью
@@ -460,16 +471,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             session.commit()  # Сохраняем изменения в базе данных
 
             await query.message.reply_text("Ваши данные подтверждены. Спасибо!")
-        elif query.data == 'reject':
+        elif query.data == 'interview_reject':
             await query.message.reply_text("Ваши данные отклонены. Пожалуйста, начните заново.")
             # Здесь можно добавить логику для сброса данных или повторного начала опроса
-        del user_states[user_id]  # Удаляем состояние пользователя
+        if user_id in user_states:
+            del user_states[user_id]  # Удаляем состояние пользователя
 
 
     except NoResultFound:
         await query.message.reply_text("Пользователь не найден в базе данных.")
     finally:
         session.close()
+
+
+# Обработчик для адреса
+async def address_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    if query.data == 'address_confirm':
+        address = context.user_data.get('address')
+        if not address:
+            await query.edit_message_text("Адрес не найден. Пожалуйста, введите адрес заново.")
+            return
+
+        session = Session()
+        try:
+            teacher = session.query(Teacher).filter_by(id=user_id).one_or_none()
+            if teacher is None:
+                await query.edit_message_text("Пользователь не найден в базе данных.")
+                return
+
+            teacher.address = address  # Сохраняем адрес
+            session.commit()
+
+            await query.edit_message_text(f"Адрес сохранён:\n{address}\nСпасибо!")
+            # Здесь можно перейти к следующему шагу, например:
+            # await query.message.reply_text("Следующий шаг...")
+        except Exception as e:
+            await query.edit_message_text(f"Ошибка при сохранении адреса: {e}")
+        finally:
+            session.close()
+
+    elif query.data == 'address_edit':
+        await query.edit_message_text("Пожалуйста, введите адрес еще раз:")
+        # Можно сбросить адрес в user_data, если нужно:
+        context.user_data.pop('address', None)
+
 
 
 # ============================ НАПОМИНАНИЯ ============================
@@ -508,7 +557,8 @@ async def main() -> None:
     app.add_handler(CommandHandler("lesson2", lesson2))
     app.add_handler(CommandHandler("lesson3", lesson3))
     app.add_handler(MessageHandler(None, handle_text))
-    app.add_handler(CallbackQueryHandler(button_handler))  # Добавляем обработчик для кнопок
+    app.add_handler(CallbackQueryHandler(interview_button_handler, pattern=r"^interview_"))
+    app.add_handler(CallbackQueryHandler(address_button_handler, pattern=r"^address_"))
     app.job_queue.run_repeating(lambda context: send_reminders(app), interval=3600, first=0)
 
     app.run_polling()

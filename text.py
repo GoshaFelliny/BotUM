@@ -53,3 +53,16 @@ ROBO_KIT_TEXT = (
     "Остались вопросы? Тогда пиши представителю метод команды https://t.me/EkaterinaPti4kina.\n\n"
     "Жми команду /lesson4"
 )
+
+
+VIDE_TOTORIAL_LESSON = (
+"""
+Отлично, в ближайшее время отправим набор, а пока к тебе едут наборы -  ознакомься с тем как проходят занятия у нас в филиалах:
+https://rutube.ru/video/ae2e28ac521c4cff5ffc58c0d54d65be/?utm_source=embed&utm_medium=referral&utm_campaign=title&utm_content=ae2e28ac521c4cff5ffc58c0d54d65be&utm_term=figma.com&referrer=appmetrica_tracking_id%3D1109935222251589310%26ym_tracking_id%3D2122083360452138545
+
+Остались вопросы? Тогда пиши представителю метод команды https://t.me/EkaterinaPti4kina.
+
+Переходим к следующему шагу:
+Жми команду /lesson5
+"""
+)

@@ -18,6 +18,7 @@ class Teacher(Base):
     registration_time = Column(DateTime, default=datetime.utcnow)  # Время регистрации
     video_path = Column(String, nullable=True)  # Путь к видеофайлу (может быть пустым)
     text_interview = Column(Text, nullable=True)  # Текст интервью
+    address = Column(Text, nullable=True) # Адрес для отправки набора
 
     def __repr__(self):
         return (f"<Teacher(full_name='{self.full_name}', city='{self.city}', "
